@@ -9,13 +9,56 @@ export default class FraudContactController {
      * @param {Response} res
      * @returns JSON
      */
-    static async getAllContact(_, res) {
+    static async getAllContact(req, res) {
         try {
-            const data = await prisma.fraudContact.findMany();
+            const { page = 1, pageSize = 5, searchText = "" } = req.query;
+
+            const pageNumber = parseInt(page, 10);
+            const pageSizeNumber = parseInt(pageSize, 10);
+
+            const skip = (pageNumber - 1) * pageSizeNumber;
+
+            const searchCondition = searchText
+                ? {
+                      OR: [
+                          {
+                              merchant: {
+                                  contains: searchText,
+                              },
+                          },
+                          {
+                              email: {
+                                  contains: searchText,
+                              },
+                          },
+                          {
+                              phone: {
+                                  contains: searchText,
+                              },
+                          },
+                          {
+                              name: {
+                                  contains: searchText,
+                              },
+                          },
+                      ],
+                  }
+                : {};
+
+            const totalRecords = await prisma.fraudContact.count({
+                where: searchCondition,
+            });
+            const data = await prisma.fraudContact.findMany({
+                where: searchCondition,
+                skip,
+                take: pageSizeNumber,
+            });
 
             return res.status(200).json({
                 message: "All frauddesk contact details",
                 data,
+                pageCount: Math.ceil(totalRecords / pageSizeNumber),
+                totalRecords,
             });
         } catch (error) {
             return res.status(500).json({
@@ -159,6 +202,20 @@ export default class FraudContactController {
         if (email) {
             if (!validator.isEmail(email)) {
                 return res.status(400).json({ error: "Invalid email address" });
+            }
+            const existingEmail = await prisma.fraudContact.findFirst({
+                where: {
+                    email: email,
+                    id: {
+                        not: id,
+                    },
+                },
+            });
+
+            if (existingEmail) {
+                return res.status(403).json({
+                    error: "Email already exist",
+                });
             }
             updateData.email = email;
         }

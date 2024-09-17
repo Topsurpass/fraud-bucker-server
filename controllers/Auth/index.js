@@ -44,24 +44,20 @@ export default class AuthController {
         const password = req.body ? req.body.password : null;
 
         if (!email) {
-            res.status(400).json({ error: "Missing email" });
-            return;
+            return res.status(400).json({ error: "Missing email" });
         }
         if (!password) {
-            res.status(400).json({ error: "Missing password" });
-            return;
+            return res.status(400).json({ error: "Missing password" });
         }
         const user = await prisma.user.findUnique({
             where: { email },
         });
         if (!user) {
-            res.status(400).json({ error: "Email does not exist !" });
-            return;
+            return res.status(400).json({ error: "Email does not exist !" });
         }
         const isValid = await bcrypt.compare(password, user.password);
         if (!isValid) {
-            res.status(400).json({ error: "Incorrect password !" });
-            return;
+            return res.status(400).json({ error: "Incorrect password !" });
         }
         const accessToken = generateAccessToken(user);
         const refreshToken = generateRefreshToken(user);
@@ -76,7 +72,7 @@ export default class AuthController {
             sameSite: "strict",
         });
 
-        res.status(200).json({
+        return res.status(200).json({
             accessToken,
             refreshToken,
             user: {

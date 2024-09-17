@@ -11,20 +11,55 @@ export default class TransactionController {
      */
 
     static async getAllTransactions(req, res) {
-        /**
-         * Get all transactions with pagination
-         */
         try {
-            const { page = 1, pageSize = 5 } = req.query;
+            const { page = 1, pageSize = 5, searchText = "", status = "" } = req.query;
 
             const pageNumber = parseInt(page, 10);
             const pageSizeNumber = parseInt(pageSize, 10);
 
             const skip = (pageNumber - 1) * pageSizeNumber;
 
-            const totalRecords = await prisma.transaction.count();
+            const searchCondition = searchText
+                ? {
+                      OR: [
+                          {
+                              merchant: {
+                                  contains: searchText,
+                              },
+                          },
+                          {
+                              channel: {
+                                  contains: searchText,
+                              },
+                          },
+                          {
+                              type: {
+                                  contains: searchText,
+                              },
+                          },
+                          {
+                              status: {
+                                  contains: searchText,
+                              },
+                          },
+                          {
+                              analyst: {
+                                  contains: searchText,
+                              },
+                          },
+                      ],
+                  }
+                : {};
+            const statusCondition = status ? { status: status } : {};
+             const whereCondition = {
+                 AND: [searchCondition, statusCondition],
+             };
+            const totalRecords = await prisma.transaction.count({
+                where: whereCondition,
+            });
 
             const data = await prisma.transaction.findMany({
+                where: whereCondition,
                 skip,
                 take: pageSizeNumber,
             });

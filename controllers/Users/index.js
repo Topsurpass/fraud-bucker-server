@@ -10,18 +10,68 @@ export default class UserController {
      * @returns JSON
      */
 
-    static async getAllUser(_, res) {
+    static async getAllUser(req, res) {
         /**
          * Get all users
          */
         try {
-            const users = await prisma.user.findMany();
+            const { page = 1, pageSize = 5, searchText = "" } = req.query;
+
+            const pageNumber = parseInt(page, 10);
+            const pageSizeNumber = parseInt(pageSize, 10);
+
+            const skip = (pageNumber - 1) * pageSizeNumber;
+
+            const searchCondition = searchText
+                ? {
+                      OR: [
+                          {
+                              firstname: {
+                                  contains: searchText,
+                              },
+                          },
+                          {
+                              lastname: {
+                                  contains: searchText,
+                              },
+                          },
+                          {
+                              email: {
+                                  contains: searchText,
+                              },
+                          },
+                          {
+                              role: {
+                                  contains: searchText,
+                              },
+                          },
+                          {
+                              phone: {
+                                  contains: searchText,
+                              },
+                          },
+                      ],
+                  }
+                : {};
+
+            const totalRecords = await prisma.user.count({
+                where: searchCondition,
+            });
+
+            const users = await prisma.user.findMany({
+                where: searchCondition,
+                skip,
+                take: pageSizeNumber,
+            });
+
             const filteredUsers = users.map(
                 ({ password, refreshToken, ...rest }) => rest
             );
             res.status(200).json({
                 message: "All users",
                 data: filteredUsers,
+                pageCount: Math.ceil(totalRecords / pageSizeNumber),
+                totalRecords,
             });
         } catch (error) {
             return res.status(500).json({
@@ -133,7 +183,12 @@ export default class UserController {
         if (phone) updateData.phone = phone;
         if (email) {
             const existingEmail = await prisma.user.findFirst({
-                where: { email: email },
+                where: {
+                    email: email,
+                    id: {
+                        not: id,
+                    },
+                },
             });
 
             if (existingEmail) {
@@ -182,6 +237,14 @@ export default class UserController {
          */
         const { id } = req.params;
         try {
+            await prisma.transaction.deleteMany({
+                where: {
+                    analystId: id,
+                    status: {
+                        in: ["Fraudulent", "Escalated", "Not fraudulent"],
+                    },
+                },
+            });
             const data = await prisma.user.delete({
                 where: { id: id },
             });
