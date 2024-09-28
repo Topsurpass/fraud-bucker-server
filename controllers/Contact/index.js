@@ -23,7 +23,7 @@ export default class FraudContactController {
                       OR: [
                           {
                               merchant: {
-                                  contains: searchText,
+                                  name: { contains: searchText },
                               },
                           },
                           {
@@ -50,13 +50,24 @@ export default class FraudContactController {
             });
             const data = await prisma.fraudContact.findMany({
                 where: searchCondition,
+                include: { merchant: true, createdBy: true },
                 skip,
                 take: pageSizeNumber,
             });
+            const sanitizedData = data.map((contact) => {
+                const {
+                    createdBy: { password, refreshToken, ...sanitizedUser } = {},
+                    ...rest
+                } = contact;
 
+                return {
+                    ...rest,
+                    createdBy: sanitizedUser,
+                };
+            });
             return res.status(200).json({
                 message: "All frauddesk contact details",
-                data,
+                data: sanitizedData,
                 pageCount: Math.ceil(totalRecords / pageSizeNumber),
                 totalRecords,
             });
@@ -77,15 +88,29 @@ export default class FraudContactController {
         try {
             const data = await prisma.fraudContact.findFirst({
                 where: { id: id },
+                include: {
+                    merchant: true,
+                    createdBy: true,
+                },
             });
             if (!data) {
                 return res
                     .status(404)
                     .json({ error: "Frauddesk contact details not found" });
             }
+            const {
+                createdBy: { password, refreshToken, ...sanitizedUser } = {},
+                ...rest
+            } = data;
+
+            const sanitizedData = {
+                ...rest,
+                createdBy: sanitizedUser,
+            };
+
             return res.status(200).json({
                 message: "Frauddesk contact details",
-                data,
+                data: sanitizedData,
             });
         } catch (error) {
             res.status(500).json({
@@ -98,6 +123,7 @@ export default class FraudContactController {
         /**
          * Create or add a new fraud contact to the DB
          */
+        const { id } = req.user;
         const { merchantId, name, phone, email } = req.body;
         const requiredFields = ["merchantId", "name", "phone", "email"];
 
@@ -138,24 +164,39 @@ export default class FraudContactController {
             }
             const fraudContact = await prisma.fraudContact.create({
                 data: {
-                    merchantId,
-                    merchant: merchantData.merchant,
+                    merchant: {
+                        connect: {
+                            id: merchantId,
+                        },
+                    },
+                    createdBy: {
+                        connect: {
+                            id: id,
+                        },
+                    },
                     name,
                     phone,
                     email,
                 },
+                include: {
+                    merchant: true,
+                    createdBy: true,
+                },
             });
+
+            const {
+                createdBy: { password, refreshToken, ...sanitizedUser } = {},
+                ...rest
+            } = fraudContact;
+
+            const sanitizedData = {
+                ...rest,
+                createdBy: sanitizedUser,
+            };
 
             res.status(201).json({
                 message: "New frauddesk contact added",
-                data: {
-                    id: fraudContact.id,
-                    merchantId: fraudContact.merchantId,
-                    merchant: merchantData.merchant,
-                    name: fraudContact.name,
-                    phone: fraudContact.phone,
-                    email: fraudContact.email,
-                },
+                data: sanitizedData,
             });
         } catch (error) {
             res.status(500).json({
@@ -186,8 +227,7 @@ export default class FraudContactController {
                     error: "Merchant with the provided merchant ID does not exist.",
                 });
             }
-            updateData.merchant = merchantData.merchant;
-            updateData.merchantId = merchantData.id;
+            updateData.merchantId = merchantId;
         }
 
         if (name) updateData.name = name;
@@ -223,12 +263,24 @@ export default class FraudContactController {
         try {
             const updatedContact = await prisma.fraudContact.update({
                 where: { id: id },
+                include: {
+                    merchant: true,
+                    createdBy: true,
+                },
                 data: updateData,
             });
+            const {
+                createdBy: { password, refreshToken, ...sanitizedUser } = {},
+                ...rest
+            } = updatedContact;
 
+            const sanitizedData = {
+                ...rest,
+                createdBy: sanitizedUser,
+            };
             res.status(200).json({
                 message: "Frauddesk contact details updated successfully",
-                data: updatedContact,
+                data: sanitizedData,
             });
         } catch (error) {
             if (error.code === "P2025") {

@@ -24,49 +24,74 @@ export default class TransactionController {
                       OR: [
                           {
                               merchant: {
-                                  contains: searchText,
+                                  name: { contains: searchText },
                               },
                           },
                           {
                               channel: {
-                                  contains: searchText,
+                                  name: { contains: searchText },
                               },
                           },
+                          { type: { contains: searchText } },
+                          { status: { contains: searchText } },
                           {
-                              type: {
-                                  contains: searchText,
-                              },
-                          },
-                          {
-                              status: {
-                                  contains: searchText,
+                              analyst: {
+                                  firstname: {
+                                      contains: searchText,
+                                  },
                               },
                           },
                           {
                               analyst: {
-                                  contains: searchText,
+                                  lastname: { contains: searchText },
                               },
                           },
                       ],
                   }
                 : {};
-            const statusCondition = status ? { status: status } : {};
-             const whereCondition = {
-                 AND: [searchCondition, statusCondition],
-             };
+
+            const statusCondition = status ? { status } : {};
+
+            const whereCondition = {
+                AND: [searchCondition, statusCondition],
+            };
+
             const totalRecords = await prisma.transaction.count({
                 where: whereCondition,
             });
 
+            // Fetch the transaction data with related entities (merchant, channel, analyst)
             const data = await prisma.transaction.findMany({
                 where: whereCondition,
+                include: {
+                    merchant: true,
+                    channel: true,
+                    analyst: true,
+                },
                 skip,
                 take: pageSizeNumber,
+                orderBy: {
+                    createdAt: "desc",
+                },
             });
 
+            // Sanitize sensitive fields from the analyst data
+            const sanitizedData = data.map((transaction) => {
+                const {
+                    analyst: { password, refreshToken, ...sanitizedAnalyst } = {},
+                    ...rest
+                } = transaction;
+
+                return {
+                    ...rest,
+                    analyst: sanitizedAnalyst,
+                };
+            });
+
+            // Return the result with pagination details
             return res.status(200).json({
                 message: "All fraudulent transactions",
-                data,
+                data: sanitizedData,
                 pageCount: Math.ceil(totalRecords / pageSizeNumber),
                 totalRecords,
             });
@@ -86,15 +111,30 @@ export default class TransactionController {
         try {
             const data = await prisma.transaction.findFirst({
                 where: { id: id },
+                include: {
+                    merchant: true,
+                    channel: true,
+                    analyst: true,
+                },
             });
             if (!data) {
                 return res.status(404).json({
                     error: "Transaction not found.",
                 });
             }
+            const {
+                analyst: { password, refreshToken, ...sanitizedAnalyst } = {},
+                ...rest
+            } = data;
+
+            const sanitizedData = {
+                ...rest,
+                analyst: sanitizedAnalyst,
+            };
+
             return res.status(200).json({
                 message: "Fraudulent transaction",
-                data,
+                data: sanitizedData,
             });
         } catch (error) {
             return res.status(500).json({
@@ -160,47 +200,29 @@ export default class TransactionController {
                     error: "Channel does not exist.",
                 });
             }
-
-            const currentDate = new Date();
-            const formattedDate = currentDate.toLocaleString("en-US", {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-            });
-
             const data = await prisma.transaction.create({
                 data: {
-                    merchant: merchantData.merchant,
                     merchantId: merchantData.id,
                     amount,
                     type,
                     channelId: channelData.id,
-                    channel: channelData.channel,
-                    analyst: `${analystData.lastname} ${analystData.firstname}`,
                     analystId: analystData.id,
                     status,
-                    date: formattedDate,
                 },
             });
+
+            const { password, refreshToken, ...userData } = analystData;
 
             res.status(201).json({
                 message: "New fraudulent transaction created",
                 data: {
                     transaction: data,
                     merchant: merchantData,
-                    analyst: {
-                        id: analystData.id,
-                        firstname: analystData.firstname,
-                        lastname: analystData.lastname,
-                        email: analystData.email,
-                        phone: analystData.phone,
-                        role: analystData.role,
-                    },
+                    analyst: userData,
                     channel: channelData,
                 },
             });
         } catch (error) {
-            console.log(error);
             res.status(500).json({
                 error: "An error occurred while creating the transaction.",
             });
@@ -231,7 +253,6 @@ export default class TransactionController {
                 return res.status(404).json({ error: "Merchant does not exist." });
             }
 
-            updateData.merchant = merchantData.merchant;
             updateData.merchantId = merchantData.id;
         }
 
@@ -246,7 +267,6 @@ export default class TransactionController {
                 return res.status(404).json({ error: "Analyst does not exist." });
             }
 
-            updateData.analyst = `${analystData.lastname} ${analystData.firstname}`;
             updateData.analystId = analystData.id;
         }
 
@@ -261,7 +281,6 @@ export default class TransactionController {
                 return res.status(404).json({ error: "Channel does not exist." });
             }
 
-            updateData.channel = channelData.channel;
             updateData.channelId = channelData.id;
         }
 

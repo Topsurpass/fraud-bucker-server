@@ -59,25 +59,42 @@ export default class DashboardController {
     static async getAnalystRank(_, res) {
         try {
             const countAnalystPerformance = await prisma.transaction.groupBy({
-                by: ["analyst"],
+                by: ["analystId"],
                 _count: {
-                    analyst: true,
+                    analystId: true,
                 },
-
                 where: {
                     status: "Fraudulent",
                 },
                 orderBy: {
                     _count: {
-                        analyst: "desc",
+                        analystId: "desc",
                     },
                 },
             });
-            const transformedData = countAnalystPerformance.map((item) => ({
-                analyst: item.analyst,
-                count: item._count.analyst,
-            }));
+            const analystIds = countAnalystPerformance.map((item) => item.analystId);
 
+            const analysts = await prisma.user.findMany({
+                where: {
+                    id: { in: analystIds },
+                },
+                select: {
+                    id: true,
+                    firstname: true,
+                    lastname: true,
+                },
+            });
+
+            const analystMap = analysts.reduce((acc, analyst) => {
+                acc[analyst.id] = `${analyst.lastname} ${analyst.firstname}`;
+                return acc;
+            }, {});
+
+            const transformedData = countAnalystPerformance.map((item) => ({
+                analystId: item.analystId,
+                analyst: analystMap[item.analystId],
+                count: item._count.analystId,
+            }));
             return res.status(200).json({
                 message: "Analyst ranking by number of fraudulent transactions",
                 data: transformedData,
@@ -92,7 +109,7 @@ export default class DashboardController {
     static async getMerchantRank(_, res) {
         try {
             const countFraudByMerchant = await prisma.transaction.groupBy({
-                by: ["merchant"],
+                by: ["merchantId"],
                 _sum: {
                     amount: true,
                 },
@@ -109,10 +126,29 @@ export default class DashboardController {
                 },
                 take: 5,
             });
+
+            const merchantIds = countFraudByMerchant.map((item) => item.merchantId);
+
+            const merchants = await prisma.merchant.findMany({
+                where: {
+                    id: { in: merchantIds },
+                },
+                select: {
+                    id: true,
+                    name: true,
+                },
+            });
+
+            const merchantMap = merchants.reduce((acc, merchant) => {
+                acc[merchant.id] = `${merchant.name}`;
+                return acc;
+            }, {});
+
             const transformedData = countFraudByMerchant.map((item) => ({
-                merchant: item.merchant,
-                cases: item._count.id,
+                merchantId: item.merchantId,
+                merchant: merchantMap[item.merchantId],
                 amount: item._sum.amount,
+                cases: item._count.id,
             }));
 
             return res.status(200).json({
@@ -132,8 +168,13 @@ export default class DashboardController {
                 where: {
                     status: "Fraudulent",
                 },
+                include: {
+                    merchant: true,
+                    channel: true,
+                    analyst: true,
+                },
                 orderBy: {
-                    date: "desc",
+                    createdAt: "desc",
                 },
                 take: 5,
             });
@@ -143,7 +184,6 @@ export default class DashboardController {
                 data: recentTransaction,
             });
         } catch (error) {
-            console.log(error);
             return res.status(500).json({
                 error: "An error occurred while retrieving recent fraudulent transactions.",
             });

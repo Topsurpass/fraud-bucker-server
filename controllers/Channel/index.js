@@ -51,13 +51,14 @@ export default class ChannelController {
          * Create new channel
          */
         try {
-            const { channelName } = req.body;
-            const requiredFields = ["channelName"];
+            const { user } = req;
+            const { name } = req.body;
+            const requiredFields = ["name"];
             if (!validateFields(req, res, requiredFields)) {
                 return;
             }
             const existingChannel = await prisma.channel.findFirst({
-                where: { channel: channelName },
+                where: { name: name },
             });
 
             if (existingChannel) {
@@ -65,21 +66,26 @@ export default class ChannelController {
                     error: "Channel with the same name already exist.",
                 });
             }
-            const currentDate = new Date();
-            const formattedDate = currentDate.toLocaleString("en-US", {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-            });
             const data = await prisma.channel.create({
                 data: {
-                    channel: channelName,
-                    date: formattedDate,
+                    name: name,
+                    createdById: user.id,
                 },
             });
+            const creator = await prisma.user.findFirst({
+                where: {
+                    id: user.id,
+                },
+            });
+            const { password, refreshToken, merchantsCreated, ...userData } = creator;
             res.status(201).json({
                 message: "New channel creaded successfully.",
-                data,
+                data: {
+                    id: data.id,
+                    name: data.name,
+                    createdAt: data.createdAt,
+                    createdBy: userData,
+                },
             });
         } catch (error) {
             return res.status(500).json({
@@ -93,7 +99,7 @@ export default class ChannelController {
          * Update a particular channel using it UUID
          */
         const { id } = req.params;
-        const { channelName } = req.body;
+        const { name } = req.body;
 
         if (!channelName) {
             return res.status(400).json({ error: "No field provided for update" });
@@ -101,9 +107,9 @@ export default class ChannelController {
 
         const updateData = {};
 
-        if (channelName) {
+        if (name) {
             const existingChannel = await prisma.channel.findFirst({
-                where: { channel: channelName },
+                where: { name: name },
             });
 
             if (existingChannel) {
@@ -111,7 +117,7 @@ export default class ChannelController {
                     error: "Channel with the same name already exist",
                 });
             }
-            updateData.channel = channelName;
+            updateData.name = name;
         }
 
         try {
@@ -140,13 +146,11 @@ export default class ChannelController {
          */
         const { id } = req.params;
         try {
-            const data = await prisma.channel.delete({
+            await prisma.channel.delete({
                 where: { id: id },
             });
-
-            res.status(200).json({
+            res.status(204).json({
                 message: "Channel deleted successfully",
-                data,
             });
         } catch (error) {
             if (error.code === "P2025") {

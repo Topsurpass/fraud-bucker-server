@@ -1,7 +1,8 @@
 import bcrypt from "bcrypt";
 import prisma from "../../utils/db.js";
 import { validateFields } from "../../utils/helpers.js";
-
+import { sendResetEmail } from "../../utils/mailer.js";
+import { v4 as uuidv4 } from "uuid";
 export default class UserController {
     /**
      * Register new user
@@ -41,7 +42,7 @@ export default class UserController {
                               },
                           },
                           {
-                              role: {
+                              jobTitle: {
                                   contains: searchText,
                               },
                           },
@@ -89,6 +90,9 @@ export default class UserController {
         try {
             const user = await prisma.user.findFirst({
                 where: { id: id },
+                include: {
+                    transactions: true,
+                },
             });
             if (!user) {
                 return res.status(404).json({
@@ -112,14 +116,15 @@ export default class UserController {
          * Create new user
          */
         try {
-            const { firstname, lastname, email, phone, role, password } = req.body;
+            const { firstname, lastname, email, phone, jobTitle, role, password } =
+                req.body;
 
             const requiredFields = [
                 "firstname",
                 "lastname",
                 "email",
                 "phone",
-                "role",
+                "jobTitle",
                 "password",
             ];
             if (!validateFields(req, res, requiredFields)) {
@@ -142,21 +147,15 @@ export default class UserController {
                     lastname,
                     email,
                     phone,
-                    role,
+                    jobTitle,
                     password: hashedPassword,
+                    role: role || undefined,
                 },
             });
-
+            const { password: newPassword, refreshToken, ...userData } = newUser;
             return res.status(201).json({
                 message: "New user created successfully",
-                user: {
-                    id: newUser.id,
-                    firstname: newUser.firstname,
-                    lastname: newUser.lastname,
-                    email: newUser.email,
-                    phone: newUser.phone,
-                    role: newUser.role,
-                },
+                user: userData,
             });
         } catch (error) {
             return res.status(500).json({
@@ -170,17 +169,32 @@ export default class UserController {
          * Update a particular user using its UUID
          */
         const { id } = req.params;
-        const { firstname, lastname, role, phone, email, password } = req.body;
-
-        if (!firstname && !lastname && !role && !phone && !email && !password) {
+        const { firstname, lastname, jobTitle, phone, email, password, role } = req.body;
+        if (
+            !firstname &&
+            !lastname &&
+            !jobTitle &&
+            !phone &&
+            !email &&
+            !password &&
+            !role
+        ) {
             return res.status(400).json({ error: "No fields provided for update" });
         }
-
+        const validRoles = ["USER", "ADMIN"];
         const updateData = {};
         if (firstname) updateData.firstname = firstname;
         if (lastname) updateData.lastname = lastname;
-        if (role) updateData.role = role;
+        if (jobTitle) updateData.jobTitle = jobTitle;
         if (phone) updateData.phone = phone;
+        if (role) {
+            if (!validRoles.includes(role)) {
+                return res.status(400).json({
+                    error: "Invalid role. Role can either be 'USER' or 'ADMIN'.",
+                });
+            }
+            updateData.role = role;
+        }
         if (email) {
             const existingEmail = await prisma.user.findFirst({
                 where: {
@@ -203,25 +217,23 @@ export default class UserController {
             const hashedPassword = await bcrypt.hash(password, 10);
             updateData.password = hashedPassword;
         }
-
         try {
             const data = await prisma.user.update({
                 where: { id },
+                include: {
+                    transactionsCreated: true,
+                },
                 data: updateData,
             });
 
+            const { password, refreshToken, ...userData } = data;
+
             return res.status(200).json({
                 message: "User details updated successfully",
-                data: {
-                    id: data.id,
-                    firstname: data.firstname,
-                    lastname: data.lastname,
-                    email: data.email,
-                    phone: data.phone,
-                    role: data.role,
-                },
+                data: userData,
             });
         } catch (error) {
+            console.log(error);
             if (error.code === "P2025") {
                 return res.status(404).json({ error: "User not found" });
             }
@@ -245,21 +257,102 @@ export default class UserController {
                     },
                 },
             });
-            const data = await prisma.user.delete({
+            await prisma.user.delete({
                 where: { id: id },
             });
-
             res.status(200).json({
                 message: "User deleted successfully",
-                data,
             });
         } catch (error) {
+            console.log(error);
             if (error.code === "P2025") {
                 return res.status(404).json({ error: "User not found" });
             }
             return res
                 .status(500)
                 .json({ error: "An error occurred while deleting the user." });
+        }
+    }
+
+    static async forgotPasswordRequest(req, res) {
+        const { email } = req.body;
+        const requiredFields = ["email"];
+        if (!validateFields(req, res, requiredFields)) {
+            return;
+        }
+        try {
+            const user = await prisma.user.findUnique({ where: { email } });
+
+            if (!user) {
+                return res
+                    .status(404)
+                    .json({ error: "User with this email does not exist." });
+            }
+
+            const resetToken = uuidv4();
+            const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour expiry
+
+            await prisma.user.update({
+                where: { email },
+                data: {
+                    resetToken,
+                    resetTokenExpiry,
+                },
+            });
+
+            const resetUrl = `${process.env.RESET_URL}/${resetToken}`;
+
+            await sendResetEmail(user.email, resetUrl);
+
+            res.status(200).json({
+                message: "Reset link sent to email",
+            });
+        } catch (error) {
+            return res.status(500).json({
+                error: "An error occurred while processing the reset request.",
+            });
+        }
+    }
+
+    static async resetPassword(req, res) {
+        const { passcode } = req.params;
+        const { password } = req.body;
+
+        try {
+            const user = await prisma.user.findFirst({
+                where: {
+                    resetToken: passcode,
+                    resetTokenExpiry: {
+                        gte: new Date(),
+                    },
+                },
+            });
+
+            if (!user) {
+                return res
+                    .status(400)
+                    .json({
+                        error: "Invalid or expired link. Kindly request for new link.",
+                    });
+            }
+
+            const hashedPassword = await bcrypt.hash(password, 10);
+
+            await prisma.user.update({
+                where: { id: user.id },
+                data: {
+                    password: hashedPassword,
+                    resetToken: null,
+                    resetTokenExpiry: null,
+                    refreshToken: null,
+                },
+            });
+
+            res.status(200).json({ message: "Password reset successfully." });
+        } catch (error) {
+            return res.status(500).json({
+                error: "An error occurred while resetting the password.",
+            });
         }
     }
 }
