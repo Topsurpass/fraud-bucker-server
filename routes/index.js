@@ -21,8 +21,8 @@ const injectRoutes = (api) => {
     // User
     api.post(
         "/api/v1/user",
-        authenticateToken,
-        onlyPermit("ADMIN"),
+        // authenticateToken,
+        // onlyPermit("ADMIN"),
         UserController.createUser
     );
     api.get("/api/v1/user", authenticateToken, UserController.getAllUser);
