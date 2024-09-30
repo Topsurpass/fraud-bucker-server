@@ -22,13 +22,10 @@ model User {
   role           Role          @default(USER)
   password       String
   refreshToken   String?       @db.VarChar(500)
-  resetToken       String?
-  resetTokenExpiry DateTime? 
   transactionsCreated Transaction[] @relation("TransactionCreatedBy")
   merchantsCreated    Merchant[]     @relation("MerchantCreatedBy")
   channelsCreated     Channel[]      @relation("ChannelCreatedBy")
   analystsCreated     FraudContact[] @relation("FraudContactCreatedBy")
-  
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 }
@@ -40,11 +37,9 @@ model Transaction {
   amount      Decimal
   type        String
   channelId   String
-  channel     Channel   @relation(fields: [channelId], references: [id])
-  
+  channel     Channel   @relation(fields: [channelId], references: [id]) 
   analystId   String
-  analyst     User      @relation("TransactionCreatedBy", fields: [analystId], references: [id])
-  
+  analyst     User      @relation("TransactionCreatedBy", fields: [analystId], references: [id]) 
   status      String
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -55,10 +50,8 @@ model Merchant {
   name        String
   transactions Transaction[]
   fraudContacts FraudContact[]
-  
   createdById String
   createdBy   User         @relation("MerchantCreatedBy", fields: [createdById], references: [id])
-  
   createdAt   DateTime     @default(now())
 }
 
@@ -69,7 +62,6 @@ model FraudContact {
   name        String
   phone       String
   email       String
-  
   createdById String
   createdBy   User        @relation("FraudContactCreatedBy", fields: [createdById], references: [id])
 }
@@ -78,9 +70,7 @@ model Channel {
   id          String       @id @default(uuid())
   name        String
   transactions Transaction[]
-  
   createdById String
   createdBy   User         @relation("ChannelCreatedBy", fields: [createdById], references: [id])
-  
   createdAt   DateTime     @default(now())
 }

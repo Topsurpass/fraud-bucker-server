@@ -4,14 +4,12 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
+import config from "./@config/index.js";
 
 dotenv.config();
 const server = express();
-const port = process.env.SERVER_PORT;
-const corsOptions = {
-    origin: "http://localhost:5173", // Only allow requests from this origin
-    credentials: true, // Allow cookies and credentials
-};
+const port = config.port;
+
 // server.use(cors(corsOptions));
 server.use(cors());
 server.use(bodyParser.json());
@@ -20,5 +18,9 @@ server.use(cookieParser());
 injectRoutes(server);
 
 server.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+    if (config.environment === "development") {
+        console.log(`Server running in Development mode on port ${port}`);
+    } else {
+        console.log(`Server running in Production mode on port ${port}`);
+    }
 });

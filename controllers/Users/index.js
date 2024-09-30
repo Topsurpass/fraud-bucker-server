@@ -3,6 +3,8 @@ import prisma from "../../utils/db.js";
 import { validateFields } from "../../utils/helpers.js";
 import { sendResetEmail } from "../../utils/mailer.js";
 import { v4 as uuidv4 } from "uuid";
+import redisStorage from "../../utils/redis.js";
+import config from "../../@config/index.js";
 export default class UserController {
     /**
      * Register new user
@@ -288,20 +290,9 @@ export default class UserController {
                     .status(404)
                     .json({ error: "User with this email does not exist." });
             }
-
             const resetToken = uuidv4();
-            const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour expiry
-
-            await prisma.user.update({
-                where: { email },
-                data: {
-                    resetToken,
-                    resetTokenExpiry,
-                },
-            });
-
-            const resetUrl = `${process.env.RESET_URL}/${resetToken}`;
-
+            await redisStorage.savePasscode(email, resetToken);
+            const resetUrl = `${config.resetPassword.url}/${resetToken}`;
             await sendResetEmail(user.email, resetUrl);
 
             res.status(200).json({
@@ -315,25 +306,25 @@ export default class UserController {
     }
 
     static async resetPassword(req, res) {
-        const { passcode } = req.params;
-        const { password } = req.body;
+        const { password, passcode } = req.body;
 
         try {
-            const user = await prisma.user.findFirst({
-                where: {
-                    resetToken: passcode,
-                    resetTokenExpiry: {
-                        gte: new Date(),
-                    },
-                },
+            const email = await redisStorage.getPasscode(passcode);
+
+            if (!email) {
+                return res.status(400).json({
+                    error: "Invalid or expired link. Kindly request a new link.",
+                });
+            }
+
+            const user = await prisma.user.findUnique({
+                where: { email },
             });
 
             if (!user) {
-                return res
-                    .status(400)
-                    .json({
-                        error: "Invalid or expired link. Kindly request for new link.",
-                    });
+                return res.status(400).json({
+                    error: "User not found.",
+                });
             }
 
             const hashedPassword = await bcrypt.hash(password, 10);
@@ -342,11 +333,11 @@ export default class UserController {
                 where: { id: user.id },
                 data: {
                     password: hashedPassword,
-                    resetToken: null,
-                    resetTokenExpiry: null,
                     refreshToken: null,
                 },
             });
+
+            await redisStorage.deletePasscode(passcode);
 
             res.status(200).json({ message: "Password reset successfully." });
         } catch (error) {

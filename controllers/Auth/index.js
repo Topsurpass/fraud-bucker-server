@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import prisma from "../../utils/db.js";
 import jwt from "jsonwebtoken";
 import { validateFields } from "../../utils/helpers.js";
+import config from "../../@config/index.js";
 
 function generateAccessToken(user) {
     return jwt.sign(
@@ -10,10 +11,11 @@ function generateAccessToken(user) {
             firstname: user.firstname,
             lastname: user.lastname,
             role: user.role,
+            jobTitle: user.jobTitle,
             email: user.email,
             phone: user.phone,
         },
-        process.env.ACCESS_TOKEN_SECRET,
+        config.jwt.accessSecretToken,
         { expiresIn: "1h" }
     );
 }
@@ -25,10 +27,11 @@ function generateRefreshToken(user) {
             firstname: user.firstname,
             lastname: user.lastname,
             role: user.role,
+            jobTitle: user.jobTitle,
             email: user.email,
             phone: user.phone,
         },
-        process.env.REFRESH_TOKEN_SECRET,
+        config.jwt.refreshSecretToken,
         { expiresIn: "1d" }
     );
 }
@@ -80,6 +83,7 @@ export default class AuthController {
                 firstname: user.firstname,
                 lastname: user.lastname,
                 role: user.role,
+                jobTitle: user.jobTitle,
                 email: user.email,
                 phone: user.phone,
             },
@@ -95,7 +99,7 @@ export default class AuthController {
         }
 
         try {
-            const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+            const decoded = jwt.verify(refreshToken, config.jwt.refreshSecretToken);
 
             const user = await prisma.user.findUnique({
                 where: { id: decoded.id },
