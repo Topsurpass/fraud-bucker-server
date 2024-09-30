@@ -160,6 +160,7 @@ export default class UserController {
                 user: userData,
             });
         } catch (error) {
+            console.log(error)
             return res.status(500).json({
                 error: "An error occurred while creating the user.",
             });

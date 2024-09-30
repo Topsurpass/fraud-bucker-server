@@ -88,6 +88,7 @@ export default class ChannelController {
                 },
             });
         } catch (error) {
+            console.log(error)
             return res.status(500).json({
                 error: "An error occurred while creating the channel.",
             });
@@ -101,7 +102,7 @@ export default class ChannelController {
         const { id } = req.params;
         const { name } = req.body;
 
-        if (!channelName) {
+        if (!name) {
             return res.status(400).json({ error: "No field provided for update" });
         }
 
